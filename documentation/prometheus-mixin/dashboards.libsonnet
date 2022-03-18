@@ -268,7 +268,7 @@ local template = grafana.template;
           span=3,
         )
         .addTarget(prometheus.target(
-          'rate(prometheus_remote_storage_failed_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_failed_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          'rate(prometheus_remote_storage_samples_failed_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_failed_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
