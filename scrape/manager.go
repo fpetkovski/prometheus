@@ -156,7 +156,8 @@ type Manager struct {
 	scrapePools   map[string]*scrapePool
 	targetSets    map[string][]*targetgroup.Group
 
-	triggerReload chan struct{}
+	triggerReload     chan struct{}
+	enableScrapeRules bool
 }
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
@@ -177,6 +178,11 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 			return nil
 		}
 	}
+}
+
+// EnableScrapeRules enables evaluating rules at scrape time.
+func (m *Manager) EnableScrapeRules() {
+	m.enableScrapeRules = true
 }
 
 func (m *Manager) reloader() {
@@ -219,6 +225,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
 			}
+			sp.enableScrapeRules = m.enableScrapeRules
 			m.scrapePools[setName] = sp
 		}
 

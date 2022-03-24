@@ -153,6 +153,7 @@ type flagConfig struct {
 	enableNewSDManager         bool
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
+	enableScrapeRules          bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -200,6 +201,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				c.tsdb.EnableNativeHistograms = true
 				c.scrape.EnableProtobufNegotiation = true
 				level.Info(logger).Log("msg", "Experimental native histogram support enabled.")
+			case "scrape-rules":
+				c.enableScrapeRules = true
+				level.Info(logger).Log("msg", "Experimental scrape rules enabled")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -626,6 +630,10 @@ func main() {
 		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {
 			level.Warn(logger).Log("component", "automaxprocs", "msg", "Failed to set GOMAXPROCS automatically", "err", err)
 		}
+	}
+
+	if cfg.enableScrapeRules {
+		scrapeManager.EnableScrapeRules()
 	}
 
 	if !agentMode {

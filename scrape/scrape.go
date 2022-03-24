@@ -244,6 +244,8 @@ type scrapePool struct {
 	noDefaultPort bool
 
 	enableProtobufNegotiation bool
+
+	enableScrapeRules bool
 }
 
 type labelLimits struct {
@@ -305,8 +307,19 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		}
 		opts.target.SetMetadataStore(cache)
 
+		// Store the cache in the context.
+		loopCtx := ContextWithMetricMetadataStore(ctx, cache)
+		loopCtx = ContextWithTarget(loopCtx, opts.target)
+
+		var re RuleEngine
+		if sp.enableScrapeRules {
+			re = newRuleEngine(opts.target.Labels(), cfg.RuleConfigs)
+		} else {
+			re = &nopRuleEngine{}
+		}
+
 		return newScrapeLoop(
-			ctx,
+			loopCtx,
 			opts.scraper,
 			log.With(logger, "target", opts.target),
 			buffers,
@@ -315,6 +328,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
+			re,
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
@@ -877,6 +891,7 @@ type scrapeLoop struct {
 	timeout         time.Duration
 
 	appender            func(ctx context.Context) storage.Appender
+	ruleEngine          RuleEngine
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
@@ -1148,6 +1163,7 @@ func newScrapeLoop(ctx context.Context,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
+	ruleEngine RuleEngine,
 	cache *scrapeCache,
 	jitterSeed uint64,
 	honorTimestamps bool,
@@ -1186,6 +1202,7 @@ func newScrapeLoop(ctx context.Context,
 		buffers:             buffers,
 		cache:               cache,
 		appender:            appender,
+		ruleEngine:          ruleEngine,
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
 		stopped:             make(chan struct{}),
@@ -1521,6 +1538,9 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		sl.cache.iterDone(len(b) > 0)
 	}()
 
+	// Make a new batch for evaluating scrape rules
+	scrapeBatch := sl.ruleEngine.NewScrapeBatch()
+
 loop:
 	for {
 		var (
@@ -1582,7 +1602,6 @@ loop:
 			lset labels.Labels
 			hash uint64
 		)
-
 		if ok {
 			ref = ce.ref
 			lset = ce.lset
@@ -1674,6 +1693,7 @@ loop:
 			}
 		}
 	}
+
 	if sampleLimitErr != nil {
 		if err == nil {
 			err = sampleLimitErr
@@ -1694,6 +1714,33 @@ loop:
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
 	}
 	if err == nil {
+		ruleSamples, ruleErr := sl.ruleEngine.EvaluateRules(scrapeBatch, ts)
+		if ruleErr != nil {
+			err = ruleErr
+			return
+		}
+
+		for _, s := range ruleSamples {
+			added++
+			var (
+				ce *cacheEntry
+				ok bool
+			)
+
+			ce, ok = sl.cache.get(s.metric.Bytes(nil))
+			if ok {
+				_, err = app.Append(ce.ref, s.metric, s.t, s.v)
+				if err != nil {
+					return
+				}
+			} else {
+				var ref storage.SeriesRef
+				ref, err = app.Append(0, s.metric, s.t, s.v)
+				sl.cache.addRef(s.metric.Bytes(nil), ref, s.metric, s.metric.Hash())
+				seriesAdded++
+			}
+		}
+
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
 			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))

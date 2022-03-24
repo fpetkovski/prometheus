@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
@@ -1930,6 +1932,38 @@ func TestGetScrapeConfigs(t *testing.T) {
 			}
 			require.Equal(t, tc.expectedResult, scfgs)
 		})
+	}
+}
+
+func TestScrapeRuleConfigs(t *testing.T) {
+	tests := []struct {
+		ruleConfig ScrapeRuleConfig
+		err        error
+	}{
+		{
+			ruleConfig: ScrapeRuleConfig{
+				Expr:   "sum by (label) (metric)",
+				Record: "sum:metric:label",
+			},
+			err: nil,
+		},
+		{
+			ruleConfig: ScrapeRuleConfig{
+				Expr:   "sum by (label) (rate(metric[2m]))",
+				Record: "sum:metric:label",
+			},
+			err: errors.New("matrix selectors are not allowed in scrape rule expressions"),
+		},
+	}
+
+	for _, test := range tests {
+		err := test.ruleConfig.Validate()
+		if test.err == nil {
+			require.NoError(t, err)
+		} else {
+			require.Error(t, err)
+			require.Equal(t, test.err.Error(), err.Error())
+		}
 	}
 }
 
