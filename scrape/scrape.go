@@ -28,6 +28,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -272,7 +274,7 @@ const maxAheadTime = 10 * time.Minute
 // returning an empty label set is interpreted as "drop"
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, options *Options) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, queryEngine *promql.Engine, options *Options) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -307,19 +309,15 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		}
 		opts.target.SetMetadataStore(cache)
 
-		// Store the cache in the context.
-		loopCtx := ContextWithMetricMetadataStore(ctx, cache)
-		loopCtx = ContextWithTarget(loopCtx, opts.target)
-
 		var re RuleEngine
 		if sp.enableScrapeRules {
-			re = newRuleEngine(opts.target.Labels(), cfg.RuleConfigs)
+			re = newRuleEngine(opts.target.Labels(), cfg.RuleConfigs, queryEngine)
 		} else {
 			re = &nopRuleEngine{}
 		}
 
 		return newScrapeLoop(
-			loopCtx,
+			ctx,
 			opts.scraper,
 			log.With(logger, "target", opts.target),
 			buffers,
@@ -1593,23 +1591,27 @@ loop:
 		meta = metadata.Metadata{}
 		metadataChanged = false
 
-		if sl.cache.getDropped(met) {
-			continue
-		}
-		ce, ok := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			lset labels.Labels
 			hash uint64
 		)
-		if ok {
-			ref = ce.ref
+		ce, cached := sl.cache.get(met)
+		if cached {
 			lset = ce.lset
+			ref = ce.ref
+		} else {
+			p.Metric(&lset)
+		}
+		scrapeBatch.Add(lset, t, val)
 
+		if sl.cache.getDropped(met) {
+			continue
+		}
+		if cached {
 			// Update metadata only if it changed in the current iteration.
 			updateMetadata(lset, false)
 		} else {
-			p.Metric(&lset)
 			hash = lset.Hash()
 
 			// Hash label set as it is seen local to the target. Then add target labels
@@ -1658,7 +1660,7 @@ loop:
 			break loop
 		}
 
-		if !ok {
+		if !cached {
 			if parsedTimestamp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
@@ -1713,46 +1715,48 @@ loop:
 	if appErrs.numExemplarOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
 	}
-	if err == nil {
-		ruleSamples, ruleErr := sl.ruleEngine.EvaluateRules(scrapeBatch, ts)
-		if ruleErr != nil {
-			err = ruleErr
-			return
-		}
-
-		for _, s := range ruleSamples {
-			added++
-			var (
-				ce *cacheEntry
-				ok bool
-			)
-
-			ce, ok = sl.cache.get(s.metric.Bytes(nil))
-			if ok {
-				_, err = app.Append(ce.ref, s.metric, s.t, s.v)
-				if err != nil {
-					return
-				}
-			} else {
-				var ref storage.SeriesRef
-				ref, err = app.Append(0, s.metric, s.t, s.v)
-				sl.cache.addRef(s.metric.Bytes(nil), ref, s.metric, s.metric.Hash())
-				seriesAdded++
-			}
-		}
-
-		sl.cache.forEachStale(func(lset labels.Labels) bool {
-			// Series no longer exposed, mark it stale.
-			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
-			switch errors.Cause(err) {
-			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
-				// Do not count these in logging, as this is expected if a target
-				// goes away and comes back again with a new scrape loop.
-				err = nil
-			}
-			return err == nil
-		})
+	if err != nil {
+		return
 	}
+
+	ruleSamples, ruleErr := sl.ruleEngine.EvaluateRules(scrapeBatch, ts)
+	if ruleErr != nil {
+		err = ruleErr
+		return
+	}
+
+	for _, s := range ruleSamples {
+		added++
+		var (
+			ce *cacheEntry
+			ok bool
+		)
+
+		ce, ok = sl.cache.get(s.metric.Bytes(nil))
+		if ok {
+			_, err = app.Append(ce.ref, s.metric, s.t, s.v)
+			if err != nil {
+				return
+			}
+		} else {
+			var ref storage.SeriesRef
+			ref, err = app.Append(0, s.metric, s.t, s.v)
+			sl.cache.addRef(s.metric.Bytes(nil), ref, s.metric, s.metric.Hash())
+			seriesAdded++
+		}
+	}
+
+	sl.cache.forEachStale(func(lset labels.Labels) bool {
+		// Series no longer exposed, mark it stale.
+		_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
+		switch errors.Cause(err) {
+		case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+			// Do not count these in logging, as this is expected if a target
+			// goes away and comes back again with a new scrape loop.
+			err = nil
+		}
+		return err == nil
+	})
 	return
 }
 

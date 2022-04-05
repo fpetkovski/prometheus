@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -36,7 +37,7 @@ type ruleEngine struct {
 }
 
 // newRuleEngine creates a new RuleEngine.
-func newRuleEngine(targetLabels labels.Labels, rules []*config.ScrapeRuleConfig) RuleEngine {
+func newRuleEngine(targetLabels labels.Labels, rules []*config.ScrapeRuleConfig, queryEngine *promql.Engine) RuleEngine {
 	if len(rules) == 0 {
 		return &nopRuleEngine{}
 	}
@@ -44,11 +45,7 @@ func newRuleEngine(targetLabels labels.Labels, rules []*config.ScrapeRuleConfig)
 	return &ruleEngine{
 		targetLabels: targetLabels,
 		rules:        rules,
-		engine: promql.NewEngine(promql.EngineOpts{
-			MaxSamples:    50000000,
-			Timeout:       10 * time.Second,
-			LookbackDelta: 5 * time.Minute,
-		}),
+		engine:       queryEngine,
 	}
 }
 
@@ -62,13 +59,14 @@ func (r *ruleEngine) NewScrapeBatch() Batch {
 
 // EvaluateRules executes rules on the given Batch and returns new Samples.
 func (r *ruleEngine) EvaluateRules(b Batch, ts time.Time) ([]*Sample, error) {
+	var builder labels.ScratchBuilder
 	var result []*Sample
 	for _, rule := range r.rules {
 		queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 			return b, nil
 		})
 
-		query, err := r.engine.NewInstantQuery(queryable, nil, rule.Expr, ts)
+		query, err := r.engine.NewInstantQuery(context.Background(), queryable, nil, rule.Expr, ts)
 		if err != nil {
 			return nil, err
 		}
@@ -79,17 +77,24 @@ func (r *ruleEngine) EvaluateRules(b Batch, ts time.Time) ([]*Sample, error) {
 		}
 
 		for _, s := range samples {
-			lbls := s.Metric.WithoutLabels("__name__")
-			lbls = append(lbls, labels.Label{
-				Name:  "__name__",
-				Value: rule.Record,
-			})
-			lbls = append(lbls, r.targetLabels...)
+			builder.Reset()
+			for _, lbl := range s.Metric {
+				if lbl.Name == labels.MetricName {
+					continue
+				}
+				builder.Add(lbl.Name, lbl.Value)
+			}
+
+			builder.Add(labels.MetricName, rule.Record)
+			for _, lbl := range r.targetLabels {
+				builder.Add(lbl.Name, lbl.Value)
+			}
 
 			result = append(result, &Sample{
-				metric: lbls,
+				metric: builder.Labels(),
 				t:      s.T,
-				v:      s.V,
+				v:      s.F,
+				h:      s.H,
 			})
 		}
 	}
@@ -111,6 +116,7 @@ type Sample struct {
 	metric labels.Labels
 	t      int64
 	v      float64
+	h      *histogram.FloatHistogram
 }
 
 func (b *batch) Add(l labels.Labels, t int64, v float64) {
@@ -161,10 +167,10 @@ func (s *seriesSet) At() storage.Series {
 	sample := s.samples[s.i]
 	return promql.NewStorageSeries(promql.Series{
 		Metric: sample.metric,
-		Points: []promql.Point{
+		Floats: []promql.FPoint{
 			{
 				T: sample.t,
-				V: sample.v,
+				F: sample.v,
 			},
 		},
 	})

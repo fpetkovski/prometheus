@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -44,7 +46,13 @@ func TestAggregatorAppender(t *testing.T) {
 		},
 	}
 	instanceLabels := []labels.Label{{Name: "instance", Value: "127.0.0.1"}}
-	re := newRuleEngine(instanceLabels, rules)
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		MaxSamples:    50000000,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
+	})
+	re := newRuleEngine(instanceLabels, rules, engine)
 	b := re.NewScrapeBatch()
 	for _, s := range samples {
 		b.Add(s.metric, s.t, s.v)

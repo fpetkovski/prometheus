@@ -526,7 +526,7 @@ func (a *ScrapeRuleConfig) Validate() error {
 
 	expr, err := parser.ParseExpr(a.Expr)
 	if err != nil {
-		return errors.Wrapf(err, "invalid scrape rule expression")
+		return errors.New("invalid scrape rule expression: " + err.Error())
 	}
 
 	parser.Inspect(expr, func(node parser.Node, nodes []parser.Node) error {

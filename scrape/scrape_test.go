@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
@@ -58,7 +60,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app   = &nopAppendable{}
 		cfg   = &config.ScrapeConfig{}
-		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
+		sp, _ = newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -93,7 +95,7 @@ func TestDroppedTargetsList(t *testing.T) {
 				},
 			},
 		}
-		sp, _                  = newScrapePool(cfg, app, 0, nil, &Options{})
+		sp, _                  = newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
@@ -480,7 +482,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp, _ := newScrapePool(cfg, app, 0, nil, &Options{})
+	sp, _ := newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 
 	loop := sp.newLoop(scrapeLoopOptions{
 		target: &Target{},
@@ -522,7 +524,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	newConfig := func() *config.ScrapeConfig {
 		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
 	}
-	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, &Options{})
+	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
@@ -2708,7 +2710,7 @@ func TestReuseScrapeCache(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
+		sp, _ = newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 		t1    = &Target{
 			discoveredLabels: labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
 		}
@@ -2909,7 +2911,7 @@ func TestReuseCacheRace(*testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
+		sp, _ = newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 		t1    = &Target{
 			discoveredLabels: labels.FromStrings("labelNew", "nameNew"),
 		}
@@ -3037,7 +3039,7 @@ func TestScrapeReportLimit(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	sp, err := newScrapePool(cfg, s, 0, nil, &Options{})
+	sp, err := newScrapePool(cfg, s, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 	require.NoError(t, err)
 	defer sp.stop()
 
@@ -3208,7 +3210,7 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 			},
 		},
 	}
-	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, &Options{})
+	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},
@@ -3226,6 +3228,7 @@ func TestScrapeWithScrapeRules(t *testing.T) {
 	ts := time.Now()
 
 	tests := []struct {
+		name            string
 		scrape          string
 		discoveryLabels []string
 		scrapeRules     []*config.ScrapeRuleConfig
@@ -3233,6 +3236,7 @@ func TestScrapeWithScrapeRules(t *testing.T) {
 		expectedSamples []sample
 	}{
 		{
+			name: "scrape rule",
 			scrape: `
 metric{l1="1", l2="1"} 3
 metric{l1="1", l2="2"} 5`,
@@ -3263,6 +3267,7 @@ metric{l1="1", l2="2"} 5`,
 			},
 		},
 		{
+			name: "scrape rule with relabel config",
 			scrape: `
 metric{l1="1", l2="1"} 3
 metric{l1="1", l2="2"} 5`,
@@ -3291,43 +3296,50 @@ metric{l1="1", l2="2"} 5`,
 	}
 
 	for _, test := range tests {
-		discoveryLabels := &Target{
-			labels: labels.FromStrings(test.discoveryLabels...),
-		}
-		app := &collectResultAppender{}
-		sl := newScrapeLoop(context.Background(),
-			nil, nil, nil,
-			func(l labels.Labels) labels.Labels {
-				return mutateSampleLabels(l, discoveryLabels, false, test.relabelConfig)
-			},
-			func(l labels.Labels) labels.Labels {
-				return mutateReportSampleLabels(l, discoveryLabels)
-			},
-			func(ctx context.Context) storage.Appender { return app },
-			newRuleEngine(discoveryLabels.labels, test.scrapeRules),
-			nil,
-			0,
-			true,
-			0,
-			nil,
-			0,
-			0,
-			false,
-			false,
-			nil,
-			false,
-		)
+		t.Run(test.name, func(t *testing.T) {
+			discoveryLabels := &Target{
+				labels: labels.FromStrings(test.discoveryLabels...),
+			}
+			app := &collectResultAppender{}
+			sl := newScrapeLoop(context.Background(),
+				nil, nil, nil,
+				func(l labels.Labels) labels.Labels {
+					return mutateSampleLabels(l, discoveryLabels, false, test.relabelConfig)
+				},
+				func(l labels.Labels) labels.Labels {
+					return mutateReportSampleLabels(l, discoveryLabels)
+				},
+				func(ctx context.Context) storage.Appender { return app },
+				newRuleEngine(discoveryLabels.labels, test.scrapeRules, promql.NewEngine(
+					promql.EngineOpts{
+						MaxSamples: 500000,
+						Timeout:    30 * time.Second,
+					}),
+				),
+				nil,
+				0,
+				true,
+				0,
+				nil,
+				0,
+				0,
+				false,
+				false,
+				nil,
+				false,
+			)
 
-		slApp := sl.appender(context.Background())
-		_, _, _, err := sl.append(slApp, []byte(test.scrape), "", ts)
-		require.NoError(t, err)
+			slApp := sl.appender(context.Background())
+			_, _, _, err := sl.append(slApp, []byte(test.scrape), "", ts)
+			require.NoError(t, err)
 
-		require.NoError(t, slApp.Commit())
-		result := app.result
-		for _, s := range result {
-			sort.Sort(s.metric)
-		}
-		require.Equal(t, test.expectedSamples, result)
+			require.NoError(t, slApp.Commit())
+			result := app.result
+			for _, s := range result {
+				sort.Sort(s.metric)
+			}
+			require.Equal(t, test.expectedSamples, result)
+		})
 	}
 }
 
@@ -3344,7 +3356,12 @@ metric{l1="1", l2="1"} 3
 metric{l1="1", l2="2"} 5`
 
 	_, sl := simpleTestScrapeLoop(t)
-	sl.ruleEngine = newRuleEngine(nil, []*config.ScrapeRuleConfig{&scrapeRule})
+	sl.ruleEngine = newRuleEngine(nil, []*config.ScrapeRuleConfig{&scrapeRule}, promql.NewEngine(
+		promql.EngineOpts{
+			MaxSamples: 500000,
+			Timeout:    30 * time.Second,
+		},
+	))
 
 	slApp := sl.appender(context.Background())
 	scraped, added, seriesAdded, err := sl.append(slApp, []byte(scrape), "", ts)
@@ -3382,7 +3399,12 @@ metric{l1="1", l2="2"} 5`
 			},
 		})
 	}
-	sl.ruleEngine = newRuleEngine(nil, []*config.ScrapeRuleConfig{&scrapeRule})
+	sl.ruleEngine = newRuleEngine(nil, []*config.ScrapeRuleConfig{&scrapeRule}, promql.NewEngine(
+		promql.EngineOpts{
+			MaxSamples: 500000,
+			Timeout:    30 * time.Second,
+		},
+	))
 
 	slApp := sl.appender(context.Background())
 	scraped, added, seriesAdded, err := sl.append(slApp, []byte(scrape), "", ts)

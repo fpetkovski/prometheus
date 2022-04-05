@@ -203,7 +203,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental native histogram support enabled.")
 			case "scrape-rules":
 				c.enableScrapeRules = true
-				level.Info(logger).Log("msg", "Experimental scrape rules enabled")
+				level.Info(logger).Log("msg", "Experimental scrape-time recording rules enabled")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -615,11 +615,26 @@ func main() {
 		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
 	}
 
+	opts := promql.EngineOpts{
+		Logger:                   log.With(logger, "component", "query engine"),
+		Reg:                      prometheus.DefaultRegisterer,
+		MaxSamples:               cfg.queryMaxSamples,
+		Timeout:                  time.Duration(cfg.queryTimeout),
+		ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+		LookbackDelta:            time.Duration(cfg.lookbackDelta),
+		NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
+		// EnableAtModifier and EnableNegativeOffset have to be
+		// always on for regular PromQL as of Prometheus v2.33.
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
+		EnablePerStepStats:   cfg.enablePerStepStats,
+	}
+	queryEngine := promql.NewEngine(opts)
+
 	var (
-		scrapeManager  = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager  = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage, queryEngine)
 		tracingManager = tracing.NewManager(logger)
 
-		queryEngine *promql.Engine
 		ruleManager *rules.Manager
 	)
 
@@ -637,23 +652,6 @@ func main() {
 	}
 
 	if !agentMode {
-		opts := promql.EngineOpts{
-			Logger:                   log.With(logger, "component", "query engine"),
-			Reg:                      prometheus.DefaultRegisterer,
-			MaxSamples:               cfg.queryMaxSamples,
-			Timeout:                  time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
-			LookbackDelta:            time.Duration(cfg.lookbackDelta),
-			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
-			// EnableAtModifier and EnableNegativeOffset have to be
-			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:     true,
-			EnableNegativeOffset: true,
-			EnablePerStepStats:   cfg.enablePerStepStats,
-		}
-
-		queryEngine = promql.NewEngine(opts)
-
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:      fanoutStorage,
 			Queryable:       localStorage,
