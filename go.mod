@@ -59,11 +59,11 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.12
-	golang.org/x/net v0.0.0-20211020060615-d418f374d309
-	golang.org/x/oauth2 v0.0.0-20211005180243-6b3c2da341f1
+	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
+	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359
-	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
+	golang.org/x/sys v0.0.0-20220209214540-3681064d5158
+	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8
 	golang.org/x/tools v0.1.7
 	google.golang.org/api v0.60.0
 	google.golang.org/genproto v0.0.0-20211021150943-2b146023228c
@@ -71,11 +71,11 @@ require (
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-	k8s.io/api v0.22.4
-	k8s.io/apimachinery v0.22.4
-	k8s.io/client-go v0.22.4
+	k8s.io/api v0.24.0
+	k8s.io/apimachinery v0.24.0
+	k8s.io/client-go v0.24.0
 	k8s.io/klog v1.0.0
-	k8s.io/klog/v2 v2.20.0
+	k8s.io/klog/v2 v2.60.1
 )
 
 replace (
