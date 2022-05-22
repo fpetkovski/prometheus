@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-func TestAggregatorAppender(t *testing.T) {
+func TestRuleEngine(t *testing.T) {
 	now := time.Now()
 	samples := []sample{
 		{
@@ -45,20 +45,19 @@ func TestAggregatorAppender(t *testing.T) {
 			Record: "code:http_requests_total:sum",
 		},
 	}
-	instanceLabels := []labels.Label{{Name: "instance", Value: "127.0.0.1"}}
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		MaxSamples:    50000000,
 		Timeout:       10 * time.Second,
 		LookbackDelta: 5 * time.Minute,
 	})
-	re := newRuleEngine(instanceLabels, rules, engine)
+	re := newRuleEngine(rules, engine)
 	b := re.NewScrapeBatch()
 	for _, s := range samples {
 		b.Add(s.metric, s.t, s.v)
 	}
 
-	result, err := re.EvaluateRules(b, now)
+	result, err := re.EvaluateRules(b, now, nopMutator)
 	require.NoError(t, err)
 
 	if len(result) != 1 {
@@ -67,7 +66,7 @@ func TestAggregatorAppender(t *testing.T) {
 
 	expectedSamples := []*Sample{
 		{
-			metric: append(labels.Labels{{Name: "code", Value: "200"}, {Name: "__name__", Value: "code:http_requests_total:sum"}}, instanceLabels...),
+			metric: labels.Labels{{Name: "code", Value: "200"}, {Name: "__name__", Value: "code:http_requests_total:sum"}},
 			t:      now.UnixMilli(),
 			v:      16,
 		},

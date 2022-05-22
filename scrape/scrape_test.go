@@ -3236,7 +3236,7 @@ func TestScrapeWithScrapeRules(t *testing.T) {
 		expectedSamples []sample
 	}{
 		{
-			name: "scrape rule",
+			name: "scrape rules without relabeling",
 			scrape: `
 metric{l1="1", l2="1"} 3
 metric{l1="1", l2="2"} 5`,
@@ -3267,7 +3267,7 @@ metric{l1="1", l2="2"} 5`,
 			},
 		},
 		{
-			name: "scrape rule with relabel config",
+			name: "scrape rules with relabeling on original series",
 			scrape: `
 metric{l1="1", l2="1"} 3
 metric{l1="1", l2="2"} 5`,
@@ -3281,13 +3281,47 @@ metric{l1="1", l2="2"} 5`,
 			relabelConfig: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
-					Regex:        relabel.MustNewRegexp("metric"),
+					Regex:        relabel.MustNewRegexp("^metric$"),
 					Action:       relabel.Drop,
 				},
 			},
 			expectedSamples: []sample{
 				{
 					metric: labels.FromStrings("__name__", "l1:metric:sum", "instance", "local", "l1", "1"),
+					t:      ts.UnixMilli(),
+					v:      8,
+				},
+			},
+		},
+		{
+			name: "scrape rules with relabeling on recorded series",
+			scrape: `
+metric{l1="1", l2="1"} 3
+metric{l1="1", l2="2"} 5`,
+			discoveryLabels: []string{"instance", "local"},
+			scrapeRules: []*config.ScrapeRuleConfig{
+				{
+					Expr:   "sum by (l1) (metric)",
+					Record: "l1:metric:sum",
+				},
+			},
+			relabelConfig: []*relabel.Config{
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        relabel.MustNewRegexp("l1:metric:sum"),
+					Action:       relabel.Keep,
+				},
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        relabel.MustNewRegexp("l1:metric:sum"),
+					Action:       relabel.Replace,
+					TargetLabel:  "__name__",
+					Replacement:  "relabeled_rule",
+				},
+			},
+			expectedSamples: []sample{
+				{
+					metric: labels.FromStrings("__name__", "relabeled_rule", "instance", "local", "l1", "1"),
 					t:      ts.UnixMilli(),
 					v:      8,
 				},
@@ -3310,7 +3344,7 @@ metric{l1="1", l2="2"} 5`,
 					return mutateReportSampleLabels(l, discoveryLabels)
 				},
 				func(ctx context.Context) storage.Appender { return app },
-				newRuleEngine(discoveryLabels.labels, test.scrapeRules, promql.NewEngine(
+				newRuleEngine(test.scrapeRules, promql.NewEngine(
 					promql.EngineOpts{
 						MaxSamples: 500000,
 						Timeout:    30 * time.Second,
@@ -3356,7 +3390,7 @@ metric{l1="1", l2="1"} 3
 metric{l1="1", l2="2"} 5`
 
 	_, sl := simpleTestScrapeLoop(t)
-	sl.ruleEngine = newRuleEngine(nil, []*config.ScrapeRuleConfig{&scrapeRule}, promql.NewEngine(
+	sl.ruleEngine = newRuleEngine([]*config.ScrapeRuleConfig{&scrapeRule}, promql.NewEngine(
 		promql.EngineOpts{
 			MaxSamples: 500000,
 			Timeout:    30 * time.Second,
@@ -3399,7 +3433,7 @@ metric{l1="1", l2="2"} 5`
 			},
 		})
 	}
-	sl.ruleEngine = newRuleEngine(nil, []*config.ScrapeRuleConfig{&scrapeRule}, promql.NewEngine(
+	sl.ruleEngine = newRuleEngine([]*config.ScrapeRuleConfig{&scrapeRule}, promql.NewEngine(
 		promql.EngineOpts{
 			MaxSamples: 500000,
 			Timeout:    30 * time.Second,

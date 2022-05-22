@@ -26,26 +26,27 @@ import (
 
 type RuleEngine interface {
 	NewScrapeBatch() Batch
-	EvaluateRules(b Batch, ts time.Time) ([]*Sample, error)
+	EvaluateRules(b Batch, ts time.Time, sampleMutator labelsMutator) ([]*Sample, error)
 }
 
 // ruleEngine evaluates rules from individual targets at scrape time.
 type ruleEngine struct {
-	targetLabels labels.Labels
-	rules        []*config.ScrapeRuleConfig
-	engine       *promql.Engine
+	rules  []*config.ScrapeRuleConfig
+	engine *promql.Engine
 }
 
 // newRuleEngine creates a new RuleEngine.
-func newRuleEngine(targetLabels labels.Labels, rules []*config.ScrapeRuleConfig, queryEngine *promql.Engine) RuleEngine {
+func newRuleEngine(
+	rules []*config.ScrapeRuleConfig,
+	queryEngine *promql.Engine,
+) RuleEngine {
 	if len(rules) == 0 {
 		return &nopRuleEngine{}
 	}
 
 	return &ruleEngine{
-		targetLabels: targetLabels,
-		rules:        rules,
-		engine:       queryEngine,
+		rules:  rules,
+		engine: queryEngine,
 	}
 }
 
@@ -58,9 +59,11 @@ func (r *ruleEngine) NewScrapeBatch() Batch {
 }
 
 // EvaluateRules executes rules on the given Batch and returns new Samples.
-func (r *ruleEngine) EvaluateRules(b Batch, ts time.Time) ([]*Sample, error) {
-	var builder labels.ScratchBuilder
-	var result []*Sample
+func (r *ruleEngine) EvaluateRules(b Batch, ts time.Time, sampleMutator labelsMutator) ([]*Sample, error) {
+	var (
+		result  []*Sample
+		builder labels.ScratchBuilder
+	)
 	for _, rule := range r.rules {
 		queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 			return b, nil
@@ -86,12 +89,9 @@ func (r *ruleEngine) EvaluateRules(b Batch, ts time.Time) ([]*Sample, error) {
 			}
 
 			builder.Add(labels.MetricName, rule.Record)
-			for _, lbl := range r.targetLabels {
-				builder.Add(lbl.Name, lbl.Value)
-			}
 
 			result = append(result, &Sample{
-				metric: builder.Labels(),
+				metric: sampleMutator(builder.Labels()),
 				t:      s.T,
 				v:      s.F,
 				h:      s.H,
@@ -184,7 +184,9 @@ type nopRuleEngine struct{}
 
 func (n nopRuleEngine) NewScrapeBatch() Batch { return &nopBatch{} }
 
-func (n nopRuleEngine) EvaluateRules(b Batch, ts time.Time) ([]*Sample, error) { return nil, nil }
+func (n nopRuleEngine) EvaluateRules(b Batch, ts time.Time, sampleMutator labelsMutator) ([]*Sample, error) {
+	return nil, nil
+}
 
 type nopBatch struct{}
 

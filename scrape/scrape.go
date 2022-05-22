@@ -311,7 +311,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 
 		var re RuleEngine
 		if sp.enableScrapeRules {
-			re = newRuleEngine(opts.target.Labels(), cfg.RuleConfigs, queryEngine)
+			re = newRuleEngine(cfg.RuleConfigs, queryEngine)
 		} else {
 			re = &nopRuleEngine{}
 		}
@@ -1719,7 +1719,7 @@ loop:
 		return
 	}
 
-	ruleSamples, ruleErr := sl.ruleEngine.EvaluateRules(scrapeBatch, ts)
+	ruleSamples, ruleErr := sl.ruleEngine.EvaluateRules(scrapeBatch, ts, sl.sampleMutator)
 	if ruleErr != nil {
 		err = ruleErr
 		return

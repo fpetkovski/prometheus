@@ -505,7 +505,7 @@ type ScrapeConfig struct {
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
 
 	// List of rules to execute at scrape time.
-	RuleConfigs []*ScrapeRuleConfig `yaml:"rule_configs,omitempty"`
+	RuleConfigs []*ScrapeRuleConfig `yaml:"scrape_rule_configs,omitempty"`
 }
 
 // ScrapeRuleConfig is the configuration for rules executed
