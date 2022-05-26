@@ -260,7 +260,7 @@ func (c Config) String() string {
 	return string(b)
 }
 
-// ScrapeConfigs returns the scrape configurations.
+// GetScrapeConfigs returns the scrape configurations.
 func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))
 
@@ -526,7 +526,7 @@ func (a *ScrapeRuleConfig) Validate() error {
 
 	expr, err := parser.ParseExpr(a.Expr)
 	if err != nil {
-		return errors.New("invalid scrape rule expression: " + err.Error())
+		return fmt.Errorf("invalid scrape rule expression: %w", err)
 	}
 
 	parser.Inspect(expr, func(node parser.Node, nodes []parser.Node) error {
