@@ -83,15 +83,15 @@ func (r *ruleEngine) EvaluateRules(b Batch, ts time.Time, sampleMutator labelsMu
 			builder.Reset()
 			for _, lbl := range s.Metric {
 				if lbl.Name == labels.MetricName {
-					continue
+					builder.Add(labels.MetricName, rule.Record)
+				} else {
+					builder.Add(lbl.Name, lbl.Value)
 				}
-				builder.Add(lbl.Name, lbl.Value)
 			}
 
-			builder.Add(labels.MetricName, rule.Record)
-
+			lbls := sampleMutator(builder.Labels())
 			result = append(result, &Sample{
-				metric: sampleMutator(builder.Labels()),
+				metric: lbls,
 				t:      s.T,
 				v:      s.F,
 				h:      s.H,
