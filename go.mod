@@ -4,8 +4,8 @@ go 1.14
 
 require (
 	github.com/Azure/azure-sdk-for-go v58.3.0+incompatible
-	github.com/Azure/go-autorest/autorest v0.11.22
-	github.com/Azure/go-autorest/autorest/adal v0.9.17
+	github.com/Azure/go-autorest/autorest v0.11.28
+	github.com/Azure/go-autorest/autorest/adal v0.9.18
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a
@@ -59,7 +59,7 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.12
-	golang.org/x/net v0.0.0-20211020060615-d418f374d309
+	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
 	golang.org/x/oauth2 v0.0.0-20211005180243-6b3c2da341f1
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359
