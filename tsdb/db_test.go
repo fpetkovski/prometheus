@@ -3288,7 +3288,7 @@ func TestLockfile(t *testing.T) {
 }
 
 func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
-	t.Skip("TODO: investigate why process crash in CI")
+	//t.Skip("TODO: investigate why process crash in CI")
 
 	const numRuns = 5
 
