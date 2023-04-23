@@ -531,7 +531,8 @@ func (a *ScrapeRuleConfig) Validate() error {
 
 	parser.Inspect(expr, func(node parser.Node, nodes []parser.Node) error {
 		if _, ok := node.(*parser.MatrixSelector); ok {
-			return errors.New("matrix selectors are not allowed in scrape rule expressions")
+			err = errors.New("matrix selectors are not allowed in scrape rule expressions")
+			return err
 		}
 		return nil
 	})
