@@ -1725,14 +1725,17 @@ loop:
 		return
 	}
 
+	var recordBuf []byte
 	for _, s := range ruleSamples {
+		recordBuf = recordBuf[:0]
 		added++
 		var (
 			ce *cacheEntry
 			ok bool
 		)
 
-		ce, ok = sl.cache.get(s.metric.Bytes(nil))
+		recordBytes := s.metric.Bytes(recordBuf)
+		ce, ok = sl.cache.get(recordBytes)
 		if ok {
 			_, err = app.Append(ce.ref, s.metric, s.t, s.v)
 			if err != nil {
@@ -1741,7 +1744,7 @@ loop:
 		} else {
 			var ref storage.SeriesRef
 			ref, err = app.Append(0, s.metric, s.t, s.v)
-			sl.cache.addRef(s.metric.Bytes(nil), ref, s.metric, s.metric.Hash())
+			sl.cache.addRef(recordBytes, ref, s.metric, s.metric.Hash())
 			seriesAdded++
 		}
 	}
