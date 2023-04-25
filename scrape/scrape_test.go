@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -3368,11 +3367,7 @@ metric{l1="1", l2="2"} 5`,
 			require.NoError(t, err)
 
 			require.NoError(t, slApp.Commit())
-			result := app.result
-			for _, s := range result {
-				sort.Sort(s.metric)
-			}
-			require.Equal(t, test.expectedSamples, result)
+			require.Equal(t, test.expectedSamples, app.result)
 		})
 	}
 }

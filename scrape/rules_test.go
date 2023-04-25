@@ -29,12 +29,12 @@ func TestRuleEngine(t *testing.T) {
 	now := time.Now()
 	samples := []sample{
 		{
-			metric: []labels.Label{{Name: "__name__", Value: "http_requests_total"}, {Name: "code", Value: "200"}, {Name: "handler", Value: "/"}},
+			metric: labels.FromStrings("__name__", "http_requests_total", "code", "200", "handler", "/"),
 			t:      now.UnixMilli(),
 			v:      10,
 		},
 		{
-			metric: []labels.Label{{Name: "__name__", Value: "http_requests_total"}, {Name: "code", Value: "200"}, {Name: "handler", Value: "/metrics"}},
+			metric: labels.FromStrings("__name__", "http_requests_total", "code", "200", "handler", "/metrics"),
 			t:      now.UnixMilli(),
 			v:      6,
 		},
@@ -66,7 +66,7 @@ func TestRuleEngine(t *testing.T) {
 
 	expectedSamples := []*Sample{
 		{
-			metric: labels.Labels{{Name: "code", Value: "200"}, {Name: "__name__", Value: "code:http_requests_total:sum"}},
+			metric: labels.FromStrings("__name__", "code:http_requests_total:sum", "code", "200"),
 			t:      now.UnixMilli(),
 			v:      16,
 		},
