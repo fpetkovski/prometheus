@@ -79,6 +79,12 @@ func (h *FloatHistogram) Copy() *FloatHistogram {
 // target schema, which must be ≤ the original schema (i.e. it must have a lower
 // resolution).
 func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
+	defer func() {
+		err := recover()
+		if err != nil {
+			panic(fmt.Errorf("cannot copy to %v schema %d: %s", h, targetSchema, err))
+		}
+	}()
 	if targetSchema == h.Schema {
 		// Fast path.
 		return h.Copy()
